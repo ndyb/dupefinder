@@ -3,11 +3,14 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
+	"fmt"
+	"github.com/dustin/go-humanize"
 	"hash/crc32"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type File struct {
@@ -22,38 +25,75 @@ type Hash struct {
 	ext  string
 }
 
+type FileAction func(file []*File) error
+
+func getActionFor(s string) (FileAction, error) {
+	switch s {
+	case "print":
+		return func(file []*File) error {
+			fmt.Printf("%s\t%s\n", humanize.Bytes(uint64(file[0].FileSize())), file[0].path)
+			return nil
+		}, nil
+	case "delete":
+		return func(file []*File) error {
+			fmt.Println(file[0].path)
+			return nil
+		}, nil
+	case "verbose":
+		return func(file []*File) error {
+			fmt.Println(file[0].path)
+			return nil
+		}, nil
+	case "dontask":
+		return func(file []*File) error {
+			fmt.Println(file[0].path)
+			return nil
+		}, nil
+	}
+	return nil, errors.New("Undefined action")
+}
+
 func NewFile(path string, info os.FileInfo) *File {
 	return &File{path, info, 0, []byte{}}
 }
 
-func (f *File) setIntro() {
+func (f *File) setIntro() error {
 	fin, err := os.Open(f.path)
-	defer fin.Close()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+	defer fin.Close()
 	r := bufio.NewReader(fin)
 
 	i := make([]byte, 1024)
 
-	log.Printf("Reading intro for %s\n", f.path)
+	dbg.Printf("Reading intro for %s\n", f.path)
 	io.ReadFull(r, i)
 	f.intro = i
+	return nil
 }
 
-func (f *File) setCrc() {
-	fin, err := os.Open(f.path)
-	defer fin.Close()
-	if err != nil {
-		log.Fatal(err)
+func (f *File) IsRegular() bool {
+	if strings.Contains(f.path, "Application Data") {
+		return false
 	}
+	return (f.info.Mode()&os.ModeType == 0) || (f.info.Mode()&os.ModeType == os.ModeDir)
+}
+
+func (f *File) setCrc() error {
+	fin, err := os.Open(f.path)
+	if err != nil {
+		return err
+	}
+	defer fin.Close()
 	r := bufio.NewReader(fin)
 
 	h := crc32.NewIEEE()
 
-	log.Printf("Calculating CRC for %s\n", f.path)
+	dbg.Printf("Calculating CRC for %s\n", f.path)
 	io.Copy(h, r)
 	f.crc = h.Sum32()
+	return nil
 }
 
 func (f *File) FileSize() int64 {
@@ -74,11 +114,14 @@ func (f *File) Hash(ext bool) Hash {
 	return hash
 }
 
-func (f *File) Intro() []byte {
+func (f *File) Intro() ([]byte, error) {
 	if len(f.intro) == 0 {
-		f.setIntro()
+		e := f.setIntro()
+		if e != nil {
+			return nil, e
+		}
 	}
-	return f.intro
+	return f.intro, nil
 }
 
 func (f *File) Crc() uint32 {
@@ -88,15 +131,21 @@ func (f *File) Crc() uint32 {
 	return f.crc
 }
 
-func (f *File) Equal(o *File) bool {
+func (f *File) Equal(o *File) (bool, error) {
 
-	if !bytes.Equal(f.Intro(), o.Intro()) {
-		return false
+	i, e := f.Intro()
+	if e != nil {
+		return false, e
+	}
+	j, _ := o.Intro()
+
+	if !bytes.Equal(i, j) {
+		return false, nil
 	}
 
 	if f.Crc() == o.Crc() && f.Crc() != 0 {
-		return true
+		return true, nil
 	}
 
-	return false
+	return false, nil
 }
