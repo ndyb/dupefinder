@@ -1,4 +1,4 @@
-package main
+package dupefinder
 
 import (
 	"bufio"
@@ -13,6 +13,11 @@ import (
 	"strings"
 )
 
+const (
+	introSize = 1024 // Number of bytes to read when reading a File intro
+)
+
+// A file on the file system
 type File struct {
 	path  string
 	info  os.FileInfo
@@ -20,11 +25,16 @@ type File struct {
 	intro []byte
 }
 
+// Hash used in hash table to identify similar files
 type Hash struct {
 	size int64
 	ext  string
 }
 
+// Hash table of files indexed by Hash
+type Files map[Hash][]File
+
+// Function definition for action that can be performed on a list of duplicate files
 type FileAction func(file []*File) error
 
 func getActionFor(s string) (FileAction, error) {
@@ -53,6 +63,7 @@ func getActionFor(s string) (FileAction, error) {
 	return nil, errors.New("Undefined action")
 }
 
+// Creates new file from path with given info
 func NewFile(path string, info os.FileInfo) *File {
 	return &File{path, info, 0, []byte{}}
 }
@@ -65,7 +76,7 @@ func (f *File) setIntro() error {
 	defer fin.Close()
 	r := bufio.NewReader(fin)
 
-	i := make([]byte, 1024)
+	i := make([]byte, introSize)
 
 	dbg.Printf("Reading intro for %s\n", f.path)
 	io.ReadFull(r, i)
@@ -73,6 +84,8 @@ func (f *File) setIntro() error {
 	return nil
 }
 
+// Returns true if file is a regular file, or a directory.
+// Windows (NTFS) junctions are not supported by standard library. Hack ignores "Application Data" folder
 func (f *File) IsRegular() bool {
 	if strings.Contains(f.path, "Application Data") {
 		return false
@@ -96,14 +109,17 @@ func (f *File) setCrc() error {
 	return nil
 }
 
-func (f *File) FileSize() int64 {
-	return f.info.Size()
+// Returns size if file in bytes
+func (f *File) FileSize() uint64 {
+	return uint64(f.info.Size())
 }
 
+// Returns true if File is a directory
 func (f *File) IsDir() bool {
 	return f.info.IsDir()
 }
 
+// Returns Hash of File
 func (f *File) Hash(ext bool) Hash {
 	var hash Hash
 	if ext {
@@ -114,7 +130,7 @@ func (f *File) Hash(ext bool) Hash {
 	return hash
 }
 
-func (f *File) Intro() ([]byte, error) {
+func (f *File) getIntro() ([]byte, error) {
 	if len(f.intro) == 0 {
 		e := f.setIntro()
 		if e != nil {
@@ -124,26 +140,27 @@ func (f *File) Intro() ([]byte, error) {
 	return f.intro, nil
 }
 
-func (f *File) Crc() uint32 {
+func (f *File) getCrc() uint32 {
 	if f.crc == 0 {
 		f.setCrc()
 	}
 	return f.crc
 }
 
+// Compares two files. First it compares the first few bytes of each file. If they are equal the files are compared by their CRC checksums
 func (f *File) Equal(o *File) (bool, error) {
 
-	i, e := f.Intro()
+	i, e := f.getIntro()
 	if e != nil {
 		return false, e
 	}
-	j, _ := o.Intro()
+	j, _ := o.getIntro()
 
 	if !bytes.Equal(i, j) {
 		return false, nil
 	}
 
-	if f.Crc() == o.Crc() && f.Crc() != 0 {
+	if f.getCrc() == o.getCrc() && f.getCrc() != 0 {
 		return true, nil
 	}
 

@@ -1,4 +1,4 @@
-package main
+package dupefinder
 
 import (
 	"flag"
@@ -68,8 +68,6 @@ func init() {
 	}
 }
 
-type Files map[Hash][]File
-
 var (
 	files = make(Files)
 	queue = make(chan []*File, 1000)
@@ -79,53 +77,56 @@ var (
 	}
 )
 
-func main() {
+// Find duplicates starting from path and send list of duplicate files to channel output
+func FindDuplicates(path string, output *chan ([]*File)) {
+	filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
 
-	go func() {
-		filepath.Walk(*path, func(path string, info os.FileInfo, err error) error {
+		file := *NewFile(path, info)
 
-			file := *NewFile(path, info)
+		if !file.IsRegular() {
+			dbg.Printf("Not regular file %s. Ignoring!\n", file.path)
+			return filepath.SkipDir
+		}
 
-			if !file.IsRegular() {
-				dbg.Printf("Not regular file %s. Ignoring!\n", file.path)
-				return filepath.SkipDir
-			}
+		if file.IsDir() {
+			dbg.Printf("Walking into %s\n", file.path)
+			return nil
+		}
 
-			if file.IsDir() {
-				dbg.Printf("Walking into %s\n", file.path)
-				return nil
-			}
+		if file.FileSize() < minSize {
+			return nil
+		}
 
-			if file.FileSize() < int64(minSize) {
-				return nil
-			}
+		h := file.Hash(*ext)
 
-			h := file.Hash(*ext)
-
-			_, exists := files[h]
-			if exists {
-				for i := range files[h] {
-					equals, err := files[h][i].Equal(&file)
-					if err != nil {
-						dbg.Printf("Error accessing %s\n", file.path)
-						return nil
-					}
-					if equals {
-						dbg.Printf("%s == %s\n", file.path, files[h][i].path)
-						queue <- []*File{&file, &files[h][i]}
-						return nil
-					}
+		_, exists := files[h]
+		if exists {
+			for i := range files[h] {
+				equals, err := files[h][i].Equal(&file)
+				if err != nil {
+					dbg.Printf("Error accessing %s\n", file.path)
+					return nil
+				}
+				if equals {
+					dbg.Printf("%s == %s\n", file.path, files[h][i].path)
+					queue <- []*File{&file, &files[h][i]}
+					return nil
 				}
 			}
+		}
 
-			files[h] = append(files[h], file)
+		files[h] = append(files[h], file)
 
-			return nil
-		})
+		return nil
+	})
 
-		close(queue)
+	close(queue)
+}
 
-	}()
+// test
+func main() {
+
+	go FindDuplicates(*path, &queue)
 
 	for {
 		f, ok := <-queue
