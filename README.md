@@ -1,8 +1,8 @@
-dupefinder
+go-dupfind
 ==========
 
-dupefinder finds duplicate files in a folder.
+go-dupfind finds duplicate files in a folder.
 
 ## Documentation
 
-http://godoc.org/github.com/ndyb/dupefinder
+http://godoc.org/github.com/ndyb/go-dupfind

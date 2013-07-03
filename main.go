@@ -1,25 +1,47 @@
-package dupefinder
+package main
+
+/*
+go-dupfind finds duplicate files in a folder.
+
+Usage:
+	go-dupfind [flags]
+
+The flags are:
+	-v
+		verbose mode
+	-s
+		minimum file size to check
+	-a
+		action to take: print, delete, verbose
+	-p
+		path to start the search. Starts from present working directory if not
+		set.
+	-help
+		show help
+	-e=true
+		don't compare files with different extensions
+*/
 
 import (
 	"flag"
 	"fmt"
 	"github.com/dustin/go-humanize"
+	. "github.com/ndyb/go-dupfind/dupefinder"
 	"github.com/ndyb/utils/debug"
 	"github.com/ndyb/utils/profiling"
 	"log"
 	"os"
-	"path/filepath"
 )
 
 var (
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 	memprofile = flag.String("memprofile", "", "write memory profile to file")
-	action     = flag.String("action", "print", "action to take: print, delete, verbose")
-	size       = flag.String("s", "0", "minimum file size to check in bytes")
+	action     = flag.String("a", "print", "action to take: print, delete, verbose")
+	size       = flag.String("s", "0", "minimum file size to check")
 	path       = flag.String("p", "", "path to start the search")
 	help       = flag.Bool("help", false, "show help")
 	ext        = flag.Bool("e", true, "don't compare files with different extensions")
-	verbose    = flag.Bool("v", false, "debug output")
+	verbose    = flag.Bool("v", false, "verbose mode")
 )
 
 var (
@@ -54,7 +76,7 @@ func init() {
 		minSize = 0
 	}
 
-	fileaction, err = getActionFor(*action)
+	fileaction, err = GetActionFor(*action)
 	if err != nil {
 		log.Fatal("Can't find action")
 	}
@@ -68,65 +90,15 @@ func init() {
 	}
 }
 
-var (
-	files = make(Files)
-	queue = make(chan []*File, 1000)
-	stats struct {
+func main() {
+
+	var queue = make(chan []*File, 1000)
+	var stats struct {
 		files int
 		size  uint64
 	}
-)
 
-// Find duplicates starting from path and send list of duplicate files to channel output
-func FindDuplicates(path string, output *chan ([]*File)) {
-	filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-
-		file := *NewFile(path, info)
-
-		if !file.IsRegular() {
-			dbg.Printf("Not regular file %s. Ignoring!\n", file.path)
-			return filepath.SkipDir
-		}
-
-		if file.IsDir() {
-			dbg.Printf("Walking into %s\n", file.path)
-			return nil
-		}
-
-		if file.FileSize() < minSize {
-			return nil
-		}
-
-		h := file.Hash(*ext)
-
-		_, exists := files[h]
-		if exists {
-			for i := range files[h] {
-				equals, err := files[h][i].Equal(&file)
-				if err != nil {
-					dbg.Printf("Error accessing %s\n", file.path)
-					return nil
-				}
-				if equals {
-					dbg.Printf("%s == %s\n", file.path, files[h][i].path)
-					queue <- []*File{&file, &files[h][i]}
-					return nil
-				}
-			}
-		}
-
-		files[h] = append(files[h], file)
-
-		return nil
-	})
-
-	close(queue)
-}
-
-// test
-func main() {
-
-	go FindDuplicates(*path, &queue)
+	go FindDuplicates(*path, minSize, *ext, queue)
 
 	for {
 		f, ok := <-queue

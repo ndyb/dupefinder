@@ -19,7 +19,7 @@ const (
 
 // A file on the file system
 type File struct {
-	path  string
+	Path  string
 	info  os.FileInfo
 	crc   uint32
 	intro []byte
@@ -37,26 +37,26 @@ type Files map[Hash][]File
 // Function definition for action that can be performed on a list of duplicate files
 type FileAction func(file []*File) error
 
-func getActionFor(s string) (FileAction, error) {
+func GetActionFor(s string) (FileAction, error) {
 	switch s {
 	case "print":
 		return func(file []*File) error {
-			fmt.Printf("%s\t%s\n", humanize.Bytes(uint64(file[0].FileSize())), file[0].path)
+			fmt.Printf("%s\t%s\n", humanize.Bytes(uint64(file[0].FileSize())), file[0].Path)
 			return nil
 		}, nil
 	case "delete":
 		return func(file []*File) error {
-			fmt.Println(file[0].path)
+			fmt.Println(file[0].Path)
 			return nil
 		}, nil
 	case "verbose":
 		return func(file []*File) error {
-			fmt.Println(file[0].path)
+			fmt.Println(file[0].Path)
 			return nil
 		}, nil
 	case "dontask":
 		return func(file []*File) error {
-			fmt.Println(file[0].path)
+			fmt.Println(file[0].Path)
 			return nil
 		}, nil
 	}
@@ -69,7 +69,7 @@ func NewFile(path string, info os.FileInfo) *File {
 }
 
 func (f *File) setIntro() error {
-	fin, err := os.Open(f.path)
+	fin, err := os.Open(f.Path)
 	if err != nil {
 		return err
 	}
@@ -78,23 +78,24 @@ func (f *File) setIntro() error {
 
 	i := make([]byte, introSize)
 
-	dbg.Printf("Reading intro for %s\n", f.path)
+	// dbg.Printf("Reading intro for %s\n", f.path)
 	io.ReadFull(r, i)
 	f.intro = i
 	return nil
 }
 
 // Returns true if file is a regular file, or a directory.
-// Windows (NTFS) junctions are not supported by standard library. Hack ignores "Application Data" folder
+// Windows (NTFS) junctions are not supported by standard library.
+// Hack ignores "Application Data" folder
 func (f *File) IsRegular() bool {
-	if strings.Contains(f.path, "Application Data") {
+	if strings.Contains(f.Path, "Application Data") {
 		return false
 	}
 	return (f.info.Mode()&os.ModeType == 0) || (f.info.Mode()&os.ModeType == os.ModeDir)
 }
 
 func (f *File) setCrc() error {
-	fin, err := os.Open(f.path)
+	fin, err := os.Open(f.Path)
 	if err != nil {
 		return err
 	}
@@ -103,7 +104,7 @@ func (f *File) setCrc() error {
 
 	h := crc32.NewIEEE()
 
-	dbg.Printf("Calculating CRC for %s\n", f.path)
+	// dbg.Printf("Calculating CRC for %s\n", f.path)
 	io.Copy(h, r)
 	f.crc = h.Sum32()
 	return nil
@@ -123,7 +124,7 @@ func (f *File) IsDir() bool {
 func (f *File) Hash(ext bool) Hash {
 	var hash Hash
 	if ext {
-		hash = Hash{f.info.Size(), filepath.Ext(f.path)}
+		hash = Hash{f.info.Size(), filepath.Ext(f.Path)}
 	} else {
 		hash = Hash{f.info.Size(), ""}
 	}
